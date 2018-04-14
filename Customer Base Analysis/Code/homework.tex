@@ -1,0 +1,112 @@
+% --------------------------------------------------------------
+% This is all preamble stuff that you don't have to worry about.
+% Head down to where it says "Start here"
+% --------------------------------------------------------------
+ 
+\documentclass[12pt]{article}
+ 
+\usepackage[margin=1in]{geometry} 
+\usepackage{amsmath,amsthm,amssymb}
+ 
+\newcommand{\N}{\mathbb{N}}
+\newcommand{\Z}{\mathbb{Z}}
+ 
+\newenvironment{Question}[2][Question]{\begin{trivlist}
+\item[\hskip \labelsep {\bfseries #1}\hskip \labelsep {\bfseries #2.}]}{\end{trivlist}}
+\newenvironment{lemma}[2][Lemma]{\begin{trivlist}
+\item[\hskip \labelsep {\bfseries #1}\hskip \labelsep {\bfseries #2.}]}{\end{trivlist}}
+\newenvironment{exercise}[2][Exercise]{\begin{trivlist}
+\item[\hskip \labelsep {\bfseries #1}\hskip \labelsep {\bfseries #2.}]}{\end{trivlist}}
+\newenvironment{problem}[2][Problem]{\begin{trivlist}
+\item[\hskip \labelsep {\bfseries #1}\hskip \labelsep {\bfseries #2.}]}{\end{trivlist}}
+\newenvironment{question}[2][Question]{\begin{trivlist}
+\item[\hskip \labelsep {\bfseries #1}\hskip \labelsep {\bfseries #2.}]}{\end{trivlist}}
+\newenvironment{corollary}[2][Corollary]{\begin{trivlist}
+\item[\hskip \labelsep {\bfseries #1}\hskip \labelsep {\bfseries #2.}]}{\end{trivlist}}
+ 
+\begin{document}
+ 
+% --------------------------------------------------------------
+%                         Start here
+% --------------------------------------------------------------
+ 
+\title{Homework 1 -- Estimating a Logit Model}
+\author{Jin Miao\\ 
+Empirical Models in Marketing} 
+ 
+\maketitle
+ 
+\begin{Question}{1} 
+	%You can use theorem, exercise, problem, or question here.  Modify x.yz to be whatever number you are proving
+The indirect utility for each individual household i to choose brand (alternative) j in a particular purchase trip (time) t is
+
+\begin{equation*}
+U_{ijt} = V_{ijt} + \epsilon_{ijt}
+\end{equation*}
+
+where 
+\begin{equation*}
+V_{ijt} = \alpha_{ij} + \beta_{1} price_{ijt}
+\end{equation*}
+
+$\epsilon_{ijt}$ are IID Extreme Value Distributed. The Cumulative Distrbution Function of $\epsilon_{ijt}$ is  
+
+\begin{equation*}
+F(\epsilon_{ijt}) = e^{-e^{-\epsilon_{ijt}}}
+\end{equation*}
+
+Consequently, 
+
+\begin{equation*}
+P(choice_{ij} = 1) = P(V_{i1t} + \epsilon_{i1t} > V_{i2t} + \epsilon_{i2t}) = P(\epsilon_{i1t} - \epsilon_{i2t} > V_{i2t} - V_{i1t})
+\end{equation*} 
+
+where 
+\begin{equation*}
+V_{i2t} - V_{i1t} = \alpha_{i2} + \beta_{1} price_{i2t} - (\alpha_{i1} + \beta_{1} price_{i1t}) = (\alpha_{i2} - \alpha_{i1}) + \beta_{1} (price_{i2t} - price_{i1t})
+\end{equation*}
+
+The propbability that each individual household i chooses brand (alternative) j in a particular purchase trip (time) t is 
+
+\begin{equation*}
+P(choice_{it} = j) = \frac{e^{ V_{ijt} }}{\sum_{k = 1}^{2}e^{ V_{ikt} }}
+\end{equation*}
+ 
+ More specifically, $\alpha_{i2}$ is set as the benchmark level such that  
+ \begin{equation*}
+ P(choice_{it} = 1) = \frac{e^{ V_{i1t} }}{ e^{ V_{i1t} } + e^{ V_{i2t} }} = \frac{e^{ \alpha_{i1} + \beta_{1} price_{i1t}  }}{ e^{ \alpha_{i1} + \beta_{1} price_{i1t}  } + e^{ \alpha_{i2} + \beta_{1} price_{i2t}  }}
+ \end{equation*}
+ \begin{equation*}
+P(choice_{it} = 2) = \frac{e^{ V_{i2t} }}{ e^{ V_{i1t} } + e^{ V_{i2t} }} = \frac{e^{ \alpha_{i2} + \beta_{1} price_{i2t}  }}{ e^{ \alpha_{i1} + \beta_{1} price_{i1t}  } + e^{ \beta_{1} price_{i2t}  }}
+\end{equation*}
+\end{Question}
+ 
+\begin{Question}{2}
+The complete data likelihood is 
+\begin{equation*}
+L = \prod\limits_{i=1}^{300} \prod\limits_{t=1}^{10} \prod\limits_{j=1}^2 { P(choice_{it} = j) } ^{Y_{ijt}}
+\end{equation*}
+
+where $Y_{ijt}$ is an indicator variable such that
+
+\begin{equation*}
+Y_{ijt}=
+\begin{cases}
+0, & \text{if brand j was chosen by household i at time t} \\
+1, & \text{if brand j was not chosen by household i at time t}
+\end{cases}
+\end{equation*}
+
+\end{Question}
+ 
+\begin{Question}{3}
+	I estimate this model with R. The output is shown as follows:
+	
+	
+\end{Question}
+ 
+% --------------------------------------------------------------
+%     You don't have to mess with anything below this line.
+% --------------------------------------------------------------
+ 
+\end{document}
