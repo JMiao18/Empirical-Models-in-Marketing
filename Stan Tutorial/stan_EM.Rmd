@@ -1,0 +1,455 @@
+---
+title: "Stan tutorial Empirical Models"
+author: "Nicolas Padilla"
+date: "January 23, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Stan tutorial for Empirical Models
+
+Stan (http://mc-stan.org/) is probabilistic modeling language with highly-efficient Bayesian computation, this is, it allows you to write models similarly as you would write them using mathematical notation, without coding the estimation procedure.  
+
+It allows users to estimate their models using two procedures: 
+
+* Hamiltonian Monte Carlo sampling - No U-Turn Sampling (NUTS)
+
+* Variational Inference - Automatic Differenciation Variational Inference (ADVI)
+
+(It also has other features: e.g. MAP estimation)
+
+You can use it from:
+
+* R (RStan)
+
+* python (PyStan)
+
+* and more ...
+
+Installation instructions for RStan (https://github.com/stan-dev/rstan/wiki/RStan-Getting-Started)
+
+## Load packages
+
+First, we load the package and set the *auto_write* option to avoid recompiling code
+```{r load_pkg}
+library(rstan)
+library(ggplot2)
+library(shinystan)
+rstan_options(auto_write = TRUE)
+```
+# Main setting
+
+Consider data $Y$, and parameters of a model $\theta$. 
+
+A model is defined in terms of the joint distribution of $Y$ and $\theta$,this is $p(Y,\theta)$.
+
+In general, we describe the joint distribution using two components:
+$$p(Y,\theta)=p(Y|\theta)\cdot p(\theta)$$
+
+- $p(Y|\theta)$: likelihood
+- $p(\theta)$: prior
+
+The **likelihood** is what is traditionally considered the model in frequentist statistics. It describes how the data is generated from the parameters.
+
+
+The **prior** indicates our beliefs (before looking at the data) of what the value of this parameter may be. It may seem that the choice of a prior distribution may affect our analysis, but in practice its impact is minor if there is enough information in the data and the prior is set *uninformatively*.
+
+We are interested in obtaining $p(\theta|Y)$, the posterior distribution of $\theta$ given that we observe the data $Y$. This is, we want to update our beliefs of what is the value of the parameter of the model, given that we have observed data.
+
+Using Bayes' rule this can be written as: $$p(\theta|Y)=\frac{p(Y|\theta)\cdot p(\theta)}{p(Y)}$$
+
+In practice, $p(Y)$ the marginal distribution of $Y$, or marginal likelihood, is hard to compute (involves integrating out $\theta$). Luckily, the posterior distribution, is a distribution over $\theta$, so for that purpuse $p(Y)$ only works as a normalizing constant that makes this distribution integrates to 1. So we can say that the posterior distribution is proportional to the product of the likelihood and the prior.$$p(\theta|Y)\propto p(Y|\theta)\cdot p(\theta)$$
+
+Because in most (interesting) cases we cannot analytically find the posterior distribution, **our goal** is to draw a sample of this distribution. Stan allows to obtain such sample, using NUTS (a specific type of Hamiltonian Monte Carlo algorithm) without coding anything else than the prior and the likelihood.
+
+# Linear regression
+
+
+Consider the most simple linear regression (one covariate)
+$$ Y_i = \alpha+X_i\beta+\varepsilon_i, \ \ \ \varepsilon_i\sim N(0,\sigma^2), \ \ \forall i=1,\ldots, N$$
+## Simulate data
+
+We simulate data with $N=200$ observations
+
+$$ X_i\sim N(0,1), \ \ \forall i=1,\ldots, N$$
+$$ Y_i\sim N(\alpha+X\beta,\sigma^2), \ \ \forall i=1,\ldots, N$$
+with $ \alpha=-0.5; \ \ \beta=2;$ and $\ \ \sigma=0.5$.
+
+
+```{r sim_data_1, cache=TRUE}
+set.seed(0)
+N=200
+X=rnorm(N)
+alpha=-0.5
+beta=2
+sigma=0.5
+Y=alpha+beta*X+rnorm(N,sd=sigma)
+plot(X,Y)
+```
+
+## Writting a model in Stan
+
+
+A model code in Stan has the following components:
+
+* `functions` (optional)
+
+* `data`
+
+* `transformed data` (optional)
+
+* `parameters`
+
+* `transformed parameters` (optional)
+
+* `model`
+
+* `generated quantities` (optional)
+
+```
+functions {
+// ... function declarations and definitions ...
+}
+data {
+// ... declarations ...
+}
+transformed data {
+// ... declarations ... statements ...
+}
+parameters {
+// ... declarations ...
+}
+transformed parameters {
+// ... declarations ... statements ...
+}
+model {
+// ... declarations ... statements ...
+}
+generated quantities {
+// ... declarations ... statements ...
+}
+```
+### Linear regression as a probabilistic model
+
+
+In our notation we identify $Y$ as data and  $\theta=(\alpha,\beta,\sigma)$ as the parameters of the model.
+
+
+First, we need to define the likelihood. We could write the linear regression using our likelihood notation $p(Y|\theta)$.
+$$ Y_i|\alpha,\beta,\sigma\sim \mathcal{N}\left(\alpha+X_i\beta,\sigma^2\right), \ \ \forall i=1,\ldots, N$$
+
+Second, we need to define a prior distribution for those parameters. For this we will choose:
+
+$$\alpha\sim \mathcal{N}\left(0,5\right)$$
+$$\beta\sim \mathcal{N}\left(0,5\right)$$
+
+The beauty of Stan is that we are not forced to use conjugate priors (e.g. Gamma or Inv.Gamma distribution for $\sigma$). In this case we can set an unbounded distribution on a bounded parameter. Stan automatically would transform this to a proper truncated distribution. In this case we use Cauchy, which is similar to a Gaussian, but allowing for outliers (heavy tail).
+
+$$\sigma\sim\text{Truncated_Cauchy}(0,5,lower=0)\cdot $$
+
+
+More this later.
+There are several alternatives we could choose.
+There are two important things to consider:
+
+* **Dimensionality**: The prior depends on whether the parameter is a real value, a vector or a matrix (or arrays of those).
+
+* **Support**: Some parameters have support only in specific regions. In our example $\sigma$ has to be positive.
+
+* **Special cases**: Some parameters have specific structures, and require specific priors. For example, a covariance matrix, or probabilities over a multinomial outcome (a vector of positive values that sum to 1).
+
+
+If you are not familiar with the model, you could:
+- See what previous papers have done for similar models
+- Go for the Stan manual, they have different suggestions for priors for different type of models
+- Use priors of simpler models for components of your model. 
+
+
+
+
+
+```{stan, output.var="lin_reg",eval = FALSE}
+data {
+  int N;                 // number of observations
+  vector[N] x;           // covariate
+  vector[N] y;           // dependent variable
+} 
+parameters {
+  real alpha;            // intercept
+  real beta;             // coefficients
+  real<lower=0> sigma;   // std dev of error
+} 
+model {
+  alpha ~ normal(0, 5);
+  beta ~ normal(0, 5);
+  sigma ~ cauchy(0, 5);
+  y ~ normal(rep_vector(alpha,N)+beta*x,sigma);
+} 
+
+```
+
+
+Now we are ready to estimate the model. You can estimate the model using the command `stan`. The main inputs for `stan` are the following:
+
+1. **Stan code**: You could either provide:
+    a) `model_code = ` an R string object with the Stan code in, or 
+    b) `file = ` a string with the path for the file that contains the stan code
+2. **Data** (`data = `): a named list of data where each data variable you defined in your 
+3. **Chains** (`chains = `): an integer with the number of parallel chains you want to run. This is useful to assess convergence, this is, you want all chains to converge to the "same" posterior distribution. Think of this as running an optimization algorithm from different starting points (`default = 4`).
+4. **Iterations** (`iter = `): number of iterations it will run for each chain. Stan would normally give you `iter/2` draws from the posterior, because it will use the other half as a "warmup" (`default = 2000`).
+
+There are several others you can find in the documentation.
+
+When estimating a model, there are two things `stan` does:
+1. `stan` compiles your Stan code into C++ code, that can be then estimated.
+2. `stan` draw samples of the parameters from the posterior distribution defined in the model.
+
+```{r example_run_1, eval=FALSE}
+data_list<-list(N=N,x=X,y=Y)
+fit<-stan(file = "lin_reg.stan",data = data_list,chains = 1,iter = 1000)
+#fit<-stan(model_code = lin_reg_st,data = data_list,chains = 1,iter = 1000)
+print(fit)
+traceplot(fit,pars=c("alpha","beta","sigma"))
+```
+
+```{r sample_1, cache=TRUE}
+data_list<-list(N=N,x=X,y=Y)
+fit<-sampling(lin_reg,data = data_list,chains = 1,iter = 1000)
+# fit<-stan(model_code = lin_reg,data = data_list,chains = 1,iter = 1000)
+print(fit)
+traceplot(fit,pars=c("alpha","beta","sigma"))
+```
+
+
+```{r plots_1, cache=TRUE}
+traceplot(fit,pars="alpha",inc_warmup=TRUE)+geom_hline(yintercept = alpha,colour="black")
+traceplot(fit,pars="beta",inc_warmup=TRUE)+geom_hline(yintercept = beta,colour="black")
+traceplot(fit,pars="sigma",inc_warmup=TRUE)+geom_hline(yintercept = sigma,colour="black")
+```
+
+# Logistic regression
+
+Now we will estimate a logistic regression for a binary outcome $Y_i\in\lbrace 0,1\rbrace$ regressed on a vector of covariates instead of a single covariate.
+
+Let say that $Y$ is whether a customer bought a product a particular month, and we intent to measure the effect of 2 covariates on purchase probability, price and Feature (plus intercept).
+
+$$X_i=\begin{bmatrix}1&,&Price_i&,& Feature_i \end{bmatrix}'$$
+
+Now I'm including the intercept as part of beta (by setting the first variable in $X_i$ to 1, for all observations).
+
+The logistic regression is described by:
+$$\text{logit} \left(p(Y_i=1|\beta,X_i)\right) = X_i'\cdot\beta$$
+
+where $\text{logit}(p)=\log\left(\frac{p}{1-p}\right)$
+
+With some algebra we can explicitly write $p(Y_i=1|\beta,X_i)$ by
+
+$$p(Y_i=1|\beta,X_i)=\text{logit}^{-1}\left(X_i'\cdot\beta\right)=\frac{1}{1+\exp(-X_i'\cdot\beta)}=\frac{\exp(X_i'\cdot\beta)}{1+\exp(X_i'\cdot\beta)}$$
+In summary:
+
+$$Y_i|\beta,X_i\sim Bernoulli\left(\text{logit}^{-1}\left(X_i'\cdot\beta\right)\right)$$
+
+With respect to the prior for $\beta$ we use again Gaussian priors:
+
+$$\beta_k\sim \mathcal{N}\left(0,5\right)$$
+
+Now with this the stan model can be written as:
+
+
+```{stan, output.var="log_reg"}
+data {
+  int<lower=0> N;
+  int<lower=1> P;
+  matrix[N,P] x;
+  int<lower=0,upper=1> y[N];
+}
+parameters {
+  vector[P] beta;
+}
+model {
+  beta ~ normal(0,5);
+  y ~ bernoulli_logit(x*beta);
+  //y ~ bernoulli(inv_logit(x*beta));
+}
+
+```
+
+Again, we simulate data with an intercept and two covariates
+
+```{r sim_data_2,cache=TRUE}
+library(boot) # inverse logit function
+set.seed(0)
+N=1500
+P=3
+X=cbind(rep(1,N),
+        rnorm(N),
+        rbinom(n = 1,size = 1,prob = 0.5))
+beta=c(0.5,-1,1)
+u = runif(N)
+Y=(u<=inv.logit(c(X%*%beta)))*1
+```
+
+Now, finally we estimate the model
+
+```{r sample_2,cache=TRUE}
+data_list<-list(N=N,P=P,x=X,y=Y)
+logrfit<-sampling(log_reg,data = data_list,chains = 3,iter = 1000)
+#fit<-stan(model_code = lin_reg,data = data_list,chains = 1,iter = 1000)
+print(logrfit)
+```
+
+You can even rename the parameters by changing the ggplot2 object
+
+```{r}
+trace <- traceplot(logrfit,pars="beta")
+levels(trace$data$parameter) <- c("Intercept","Price","Feature")
+plot(trace)
+```
+
+
+# Hierarchical model
+
+$$ Y_{it}|\alpha,\beta,\sigma\sim \mathcal{N}\left(X_{it}'\cdot\beta_i,\sigma^2\right), \ \ \forall i=1,\ldots, I,\;\forall i=1,\ldots, I,\;$$
+
+Second, we need to define a prior distribution for those parameters. For this we will choose:
+
+$$\beta_i|\mu_\beta,\Sigma_\beta\sim \mathcal{N}(\mu_\beta,\Sigma_\beta)$$
+For the population priors we could model using standard conjugate priors (Normal, Wishart / Inverse Wishart).
+
+However, the benefit of using Stan is that we do not need to set conjugate priors. Instead, we want priors that are flexible enough (uninformative), and computationally convenient.
+
+For the mean use independent Gaussian:
+
+$$\mu_\beta\sim \mathcal{N}(0,5\cdot \mathbb{I}_P)$$
+
+And for the variance, we first decompose it into standard deviations and correlations, and we impose positive priors on standard deviations, and a particular prior built in in stan for correlation matrices.
+
+$$\Sigma_\beta =\text{diag}(\tau)\cdot R\cdot  \text{diag}(\tau)=\text{diag}(\tau)\cdot  L_R L_R'\cdot  \text{diag}(\tau)$$
+
+where $\tau$ is a vector of the standard deviations of $\beta$, $R$ is the correlation matrix, and $L_R$ its cholesky decomposition.
+
+We follow suggestions from the Stan manual. Notice that all values relies in continuous variables being standardized (both covariates and outcomes).
+
+$$\tan^{-1} \left(\frac{\tau}{2.5}\right) \sim U[0,\pi/2]$$
+
+$$L_R \sim \text{LKJ_corr_cholesky}(2)$$
+
+
+```{r sim_data_3,cache=TRUE}
+library(MASS) # mvrnorm
+set.seed(0)
+I=200
+T=40
+P=3
+N=I*T
+X=cbind(rep(1,N),
+        rnorm(N),
+        rnorm(N))
+mu_beta=c(1.5,-1,1)
+sigma_beta = diag(rep(0.5^2,P))
+beta = mvrnorm(n = I,mu = mu_beta,Sigma = sigma_beta)
+ii <- rep(1:I, each = T)  
+
+sigma_y <-0.5
+Y=rep(0,N)
+
+for (n in 1:N) {
+  Y[n] = rnorm(1,mean = beta[ii[n],]%*%X[n,],sd = sigma_y)
+}
+ggplot(data = data.frame(beta_true=c(beta),param=rep(c("Intercept","Price","Feature"),each = I)),
+       aes(x=beta_true,colour=param,fill=param))+geom_density(alpha=0.2)
+```
+
+
+
+
+```{stan, output.var="hier_reg"}
+data {
+  int<lower=0>                          N; // number of total observations
+  int<lower=1>                          I; // number of individuals
+  int<lower=1,upper=I>              ii[N]; // individual of each observation
+  int<lower=1>                          P; // number of covariates
+  matrix[N,P]                           x; // covariates
+  real                               y[N]; // outcome
+}
+parameters {
+  matrix[P,I]                            z; // individual standard normal
+  row_vector[P]                    mu_beta; // mean vector
+  vector<lower=0,upper=pi()/2>[P] tau_unif; // unif. population standard dev.
+  cholesky_factor_corr[P]              L_R; // cholesky decomp. of correlation matrix
+  real<lower=0>                    sigma_y; // variance of regression error term
+}
+transformed parameters{
+  matrix[I,P]                        beta; // individual coefficients
+  vector<lower=0>[P]                  tau; // population standard deviation
+  for (k in 1:P) 
+    tau[k] = 2.5 * tan(tau_unif[k]);
+  beta = rep_matrix(mu_beta,I) + (diag_pre_multiply(tau,L_R) * z)';
+}
+model {
+  to_vector(z) ~ normal(0, 1);
+  L_R ~ lkj_corr_cholesky(2);
+  mu_beta ~ normal(0,5);
+  sigma_y ~ cauchy(0,2);
+  // tau_unif ~ uniform(0,pi()/2); this is not necessary
+  y ~ normal(rows_dot_product(beta[ii] , x), sigma_y);
+  //y[n] ~ normal(beta[ii[n]] * x[,n,sigma_y]);
+}
+generated quantities{
+  matrix[P,P]                  Sigma_beta; // Sigma beta
+  Sigma_beta = diag_pre_multiply(tau, L_R) * diag_pre_multiply(tau, L_R)';
+}
+
+```
+
+
+
+```{r sample_3,cache=TRUE}
+data_list<-list(N=N,I=I,ii=ii,P=P,x=X,y=Y)
+
+hievbfit <- vb(hier_reg,data = data_list,iter=10000, output_samples=100,
+           adapt_engaged=FALSE, eta=0.1)
+vbfl <- extract(hievbfit)
+#rm(hievbfit)
+
+axis.mean = function(x, axis){
+  n_axes = length(dim(x))
+  if(n_axes < 2){
+    out = mean(x)
+  } else {
+    if(axis > n_axes){
+      stop("Error: Axis number greater than total number of axes.")
+    } 
+    out = apply(x, (1:n_axes)[-axis], mean)
+  }
+  return(out)
+}
+
+ini_list<- list(lapply(vbfl, axis.mean, axis=1))
+
+hierfit<-sampling(hier_reg,data = data_list,
+                  chains = 1,iter = 1000,
+                  init=ini_list,
+                  pars=c("z","tau_unif","L_Omega"),include = FALSE)
+```
+```{r}
+print(hievbfit,pars=c("mu_beta","tau","sigma_y","lp__"))
+```
+
+
+```{r plot_3,cache=TRUE}
+traceplot(hievbfit,pars=c("mu_beta","tau"))
+```
+
+
+```{r pred_beta,cache=TRUE}
+beta_hat <- matrix(get_posterior_mean(hierfit,pars="beta"),nrow = I,ncol = P,byrow = TRUE)
+ggplot(data = data.frame(beta_true=c(beta),
+                         beta_hat=c(beta_hat),
+                         param=rep(c("Intercept","Price","Feature"),each = I)),
+       aes(x=beta_true,y=beta_hat))+geom_point()+facet_grid(.~param)+geom_abline(intercept = 0,slope = 1) + labs(title = "Recovery of individual parameters")
+```
+
